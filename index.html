@@ -1,3 +1,4 @@
+```html
 <!DOCTYPE html>
 <html lang="en" data-ov="ui-sophisticated">
 <head>
@@ -271,10 +272,18 @@ function readUrlHashState(){
 
 function updateSubdomainBannerLinks(){
   try{
-    var payload=encodeURIComponent(JSON.stringify(UI_STATE));
+    writeRootDomainCookie(UI_STATE);
     document.querySelectorAll("a.sub-link").forEach(function(a){
       var base=a.dataset.sub||a.getAttribute("href").split("#")[0];
-      a.href=base+"#ffh="+payload;
+      a.href=base;
+      var btn=a.querySelector("button");
+      if(btn){
+        btn.onclick=function(e){
+          e.preventDefault();
+          writeRootDomainCookie(UI_STATE);
+          window.top.location.href=base;
+        };
+      }
     });
   }catch(e){}
 }
@@ -343,242 +352,4 @@ function applySharedUiToDom(){
     sw.style.background=UI_STATE.activeColor;
     sw.textContent=UI_STATE.activeColor+" ("+UI_STATE.activeLabel+")";
   }
-  if(document.getElementById("sharedOverlaySel"))document.getElementById("sharedOverlaySel").value=UI_STATE.overlay;
-  if(document.getElementById("sharedThemeSel"))document.getElementById("sharedThemeSel").value=UI_STATE.mode;
-  if(document.getElementById("sharedFontSel"))document.getElementById("sharedFontSel").value=UI_STATE.font;
-  if(typeof onChromaColorReceived==="function")onChromaColorReceived(UI_STATE.activeColor,UI_STATE.activeLabel);
-}
-
-function initSharedCustomizerBar(){
-  var popBtn=document.getElementById("openChromaPopupBtn");
-  if(popBtn){
-    popBtn.onclick=function(){
-      var payload=encodeURIComponent(JSON.stringify(UI_STATE));
-      chromaPopupWin=window.open("https://chroma.forefronthawk.com#ffh="+payload,"HawkChromaCompanion","width=520,height=760");
-    };
-  }
-  window.addEventListener("message",function(e){
-    if(!e.data)return;
-    if(e.data.type==="FFH_UI_SYNC"&&e.data.ui){
-      Object.assign(UI_STATE,e.data.ui);
-      saveAndBroadcastUi(false);
-    }else if(e.data.hex){
-      UI_STATE.activeColor=e.data.hex.toUpperCase();
-      UI_STATE.activeLabel=e.data.label||"CHROMA";
-      saveAndBroadcastUi(false);
-    }
-  });
-  // Poll .forefronthawk.com root cookie every 800ms so separate tabs on chroma.forefronthawk.com and draw/shine/rgb.forefronthawk.com sync live without needing a popup!
-  var lastCookieJson="";
-  setInterval(function(){
-    var ck=readRootDomainCookie();
-    if(ck){
-      var j=JSON.stringify(ck);
-      if(j!==lastCookieJson){
-        lastCookieJson=j;
-        Object.assign(UI_STATE,ck);
-        applySharedUiToDom();
-      }
-    }
-  },800);
-  var ovSel=document.getElementById("sharedOverlaySel");
-  if(ovSel&&!ovSel.options.length){
-    OVERLAY_LIST.forEach(function(o){
-      var op=document.createElement("option");op.value=o[0];op.textContent=o[1];ovSel.appendChild(op);
-    });
-    ovSel.onchange=function(){UI_STATE.overlay=this.value;saveAndBroadcastUi(true)};
-  }
-  var thSel=document.getElementById("sharedThemeSel");
-  if(thSel){thSel.onchange=function(){UI_STATE.mode=this.value;saveAndBroadcastUi(true)}}
-  var fnSel=document.getElementById("sharedFontSel");
-  if(fnSel){fnSel.onchange=function(){UI_STATE.font=this.value;saveAndBroadcastUi(true)}}
-  var custBtn=document.getElementById("toggleSharedCustBtn");
-  if(custBtn){
-    custBtn.onclick=function(){
-      var p=document.getElementById("sharedCustPanel");
-      if(p)p.hidden=!p.hidden;
-    };
-  }
-  ["cBgIn","cPanelIn","cTextIn"].forEach(function(id){
-    var el=document.getElementById(id);
-    if(el)el.oninput=function(){
-      UI_STATE.cBg=document.getElementById("cBgIn").value;
-      UI_STATE.cPanel=document.getElementById("cPanelIn").value;
-      UI_STATE.cText=document.getElementById("cTextIn").value;
-      UI_STATE.mode="custom_live";
-      saveAndBroadcastUi(true);
-    };
-  });
-}
-
-// Listen for cross-tab / cross-window updates from HawkChroma or any forefronthawk.com app
-window.addEventListener("storage",function(e){
-  if(e.key==="forefronthawk_shared_ui"||e.key==="hawkchroma_v4")loadSharedUi();
-});
-if(suiteChan){
-  suiteChan.onmessage=function(e){
-    if(e.data&&e.data.ui){
-      Object.assign(UI_STATE,e.data.ui);
-      applySharedUiToDom();
-    }
-  };
-}
-if(chromaChan){
-  chromaChan.onmessage=function(e){
-    if(e.data&&e.data.hex){
-      UI_STATE.activeColor=e.data.hex.toUpperCase();
-      UI_STATE.activeLabel=e.data.label||"CHROMA";
-      saveAndBroadcastUi(false);
-    }
-  };
-}
-
-(function(){
-  var cols=32,rows=20,tool="pen",sym="off",pulsing=false,pulseRaf=0,pegs=[],down=false,lineStart=null;
-  var board=document.getElementById("pegBoard");
-
-  function buildBoard(){
-    board.innerHTML="";pegs=[];
-    board.style.setProperty("--pcols",cols);
-    for(var r=0;r<rows;r++){
-      for(var c=0;c<cols;c++){
-        var d=document.createElement("div");
-        d.className="peg";
-        d.dataset.r=r;d.dataset.c=c;d.dataset.color="";
-        board.appendChild(d);
-        pegs.push(d);
-      }
-    }
-  }
-
-  function setPeg(r,c,hex){
-    if(r<0||r>=rows||c<0||c>=cols)return;
-    var p=pegs[r*cols+c];if(!p)return;
-    if(hex){
-      p.classList.add("lit");
-      p.style.setProperty("--pc",hex);
-      p.dataset.color=hex;
-    }else{
-      p.classList.remove("lit");
-      p.style.removeProperty("--pc");
-      p.dataset.color="";
-    }
-  }
-
-  function plotWithSym(r,c,hex){
-    setPeg(r,c,hex);
-    if(sym==="h"||sym==="quad")setPeg(r,cols-1-c,hex);
-    if(sym==="v"||sym==="quad")setPeg(rows-1-r,c,hex);
-    if(sym==="quad")setPeg(rows-1-r,cols-1-c,hex);
-  }
-
-  function floodFill(sr,sc,newHex){
-    var target=pegs[sr*cols+sc].dataset.color||"";
-    if(target===newHex)return;
-    var q=[[sr,sc]],vis={};
-    while(q.length){
-      var cur=q.shift(),r=cur[0],c=cur[1],k=r+","+c;
-      if(vis[k]||r<0||r>=rows||c<0||c>=cols)continue;
-      var p=pegs[r*cols+c];
-      if((p.dataset.color||"")!==target)continue;
-      vis[k]=true;
-      setPeg(r,c,newHex);
-      q.push([r+1,c],[r-1,c],[r,c+1],[r,c-1]);
-    }
-  }
-
-  function drawLine(r0,c0,r1,c1,hex){
-    var steps=Math.max(Math.abs(r1-r0),Math.abs(c1-c0));
-    for(var i=0;i<=steps;i++){
-      var r=Math.round(r0+(r1-r0)*(steps?i/steps:0));
-      var c=Math.round(c0+(c1-c0)*(steps?i/steps:0));
-      plotWithSym(r,c,hex);
-    }
-  }
-
-  function handlePointer(e,isDown){
-    var el=document.elementFromPoint(e.clientX,e.clientY);
-    if(!el||!el.classList.contains("peg"))return;
-    var r=+el.dataset.r,c=+el.dataset.c,hex=UI_STATE.activeColor||"#10B981";
-    if(tool==="erase")plotWithSym(r,c,"");
-    else if(tool==="fill"&&isDown)floodFill(r,c,hex);
-    else if(tool==="line"){
-      if(isDown)lineStart=[r,c];
-      else if(lineStart){drawLine(lineStart[0],lineStart[1],r,c,hex);lineStart=null}
-    }else plotWithSym(r,c,hex);
-  }
-
-  board.addEventListener("pointerdown",function(e){down=true;handlePointer(e,true)});
-  board.addEventListener("pointermove",function(e){if(down&&tool!=="line"&&tool!=="fill")handlePointer(e,false)});
-  window.addEventListener("pointerup",function(e){if(down&&tool==="line")handlePointer(e,false);down=false});
-
-  document.querySelectorAll("#drawToolSeg button").forEach(function(b){
-    b.onclick=function(){
-      tool=b.dataset.t;
-      document.querySelectorAll("#drawToolSeg button").forEach(function(x){x.setAttribute("aria-pressed",x===b)});
-    };
-  });
-  document.getElementById("pegGridSel").onchange=function(){
-    var pts=this.value.split("x");cols=+pts[0];rows=+pts[1];buildBoard();
-  };
-  document.getElementById("pegShapeSel").onchange=function(){
-    board.style.setProperty("--prad",this.value);
-  };
-  document.getElementById("pegSymSel").onchange=function(){sym=this.value};
-  document.getElementById("pegClearBtn").onclick=buildBoard;
-
-  function loadHawkSample(){
-    buildBoard();
-    var midC=Math.floor(cols/2),midR=Math.floor(rows/2);
-    for(var w=0;w<Math.min(12,midC-1);w++){
-      plotWithSym(midR-Math.floor(w/2),midC+w,"#D4AF37");
-      plotWithSym(midR-Math.floor(w/2)+1,midC+w,"#38BDF8");
-      plotWithSym(midR+Math.floor(w/3),midC+Math.floor(w/2),"#10B981");
-    }
-    plotWithSym(midR-2,midC,"#EF4444");
-  }
-  document.getElementById("pegSampleHawkBtn").onclick=loadHawkSample;
-
-  var pTick=0;
-  function pulseLoop(){
-    if(!pulsing)return;
-    pTick=(pTick+4)%360;
-    var g=6+Math.round((Math.sin(pTick*Math.PI/180)+1)*8);
-    board.style.setProperty("--pglow",g+"px");
-    pulseRaf=requestAnimationFrame(pulseLoop);
-  }
-  document.getElementById("pegPulseBtn").onclick=function(){
-    pulsing=!pulsing;
-    this.textContent=pulsing?"✨ Glow Pulse: ON":"✨ Glow Pulse: Off";
-    if(pulsing)pulseRaf=requestAnimationFrame(pulseLoop);
-    else cancelAnimationFrame(pulseRaf);
-  };
-
-  document.getElementById("pegExportPngBtn").onclick=function(){
-    var cv=document.createElement("canvas");
-    cv.width=cols*24;cv.height=rows*24;
-    var ctx=cv.getContext("2d");
-    ctx.fillStyle="#04060A";ctx.fillRect(0,0,cv.width,cv.height);
-    for(var r=0;r<rows;r++){
-      for(var c=0;c<cols;c++){
-        var col=pegs[r*cols+c].dataset.color;
-        ctx.beginPath();
-        ctx.arc(c*24+12,r*24+12,col?9:4,0,Math.PI*2);
-        ctx.fillStyle=col||"#161B26";
-        if(col){ctx.shadowColor=col;ctx.shadowBlur=12}else ctx.shadowBlur=0;
-        ctx.fill();
-      }
-    }
-    var a=document.createElement("a");
-    a.href=cv.toDataURL("image/png");
-    a.download="hawkdraw_light_rite.png";
-    a.click();
-  };
-
-  initSharedCustomizerBar();
-  loadSharedUi();
-  loadHawkSample();
-})();
-</script>
-</body>
-</html>
+  if(document.getElementById("sharedOverlayS
